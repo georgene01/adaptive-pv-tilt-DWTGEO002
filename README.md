@@ -1,4 +1,10 @@
 # Adaptive PV Tilt – Results and Simulation Files  
+<p align="left">
+  <img src="https://img.shields.io/badge/Reproducible-Yes-brightgreen" />
+  <img src="https://img.shields.io/badge/Python-3.9%2B-blue" />
+  <img src="https://img.shields.io/badge/pvlib-Used-informational" />
+</p>
+
 **Project:** Optimizing Photovoltaic Output Through Adaptive Tilt Angles to Mitigate Thermal Losses  
 **Student:** Georgene de Wet (DWTGEO002)  
 **Supervisor:** Prof K. A. Folly  
@@ -23,32 +29,34 @@ All results, figures, and tables cited in the thesis (e.g., annual offset sweeps
 
 ## 2  Folder Structure
 
+```text
 adaptive-pv-tilt-DWTGEO002/
-├─ bins/ # Classified weather/irradiance bins for daily analysis
-├─ configs/ # YAML configs for run scopes (e.g., run_scope.yaml)
-├─ data_raw/ # Raw/aligned NASA POWER & PVDAQ inputs (large; may be ignored in Git)
-├─ figs/ # Generated plots used in the report
-├─ hourlies/ # Hourly POA / AC time-series exports
-├─ inputs/ # Site lists, run inputs (e.g., sites.csv)
-├─ manifests/ # Per-site/year manifests of aligned datasets
-├─ out/ # Daily & annual energy summaries (lightweight)
-├─ outputs/ # Heavier scratch outputs (often git-ignored)
-├─ poa_col/ # POA irradiance collections/exports used by plots
-├─ pv-tilt/ # (Project-specific helpers or notebooks if present)
-├─ qc/ # Quality-control logs and patch commands
-├─ selection/ # Selected representative days per bin and site
-├─ tables/ # CSV exports cited in the thesis (e.g., LCOE priors, bin summaries)
-├─ thesis/ # LaTeX report (if included for convenience)
-├─ tmp/ # Temporary files / caches (git-ignored)
-├─ tools/ # Simulation & plotting scripts (Python)
-│ ├─ run_annual_policy.py
-│ ├─ daily_sweep_direct.py
-│ ├─ mc_lcoe_from_energy.py
-│ ├─ plot_offtilt_results.py
-│ └─ ... (other helper scripts)
+├─ bins/           # Classified weather/irradiance bins for daily analysis
+├─ configs/        # YAML configs for run scopes (e.g., run_scope.yaml)
+├─ data_raw/       # Raw/aligned NASA POWER & PVDAQ inputs (large; often git-ignored)
+├─ figs/           # Generated plots used in the report
+├─ hourlies/       # Hourly POA / AC time-series exports
+├─ inputs/         # Site lists, run inputs (e.g., sites.csv)
+├─ manifests/      # Per-site/year manifests of aligned datasets
+├─ out/            # Daily & annual energy summaries (lightweight)
+├─ outputs/        # Heavier scratch outputs (often git-ignored)
+├─ poa_col/        # POA irradiance collections/exports used by plots
+├─ pv-tilt/        # Project-specific helpers or notebooks (if present)
+├─ qc/             # Quality-control logs and patch commands
+├─ selection/      # Selected representative days per bin and site
+├─ tables/         # CSV/PDF exports cited in the thesis (e.g., LCOE priors, bin summaries)
+├─ thesis/         # LaTeX report (if included)
+├─ tmp/            # Temporary files / caches (git-ignored)
+├─ tools/          # Simulation & plotting scripts (Python)
+│  ├─ run_annual_policy.py
+│  ├─ daily_sweep_direct.py
+│  ├─ mc_lcoe_from_energy.py
+│  ├─ plot_offtilt_results.py
+│  └─ ... (other helper scripts)
 ├─ README.md
 └─ README_patch_commands.txt
 
+```
 ---
 
 ## 3  Reproducibility
@@ -73,7 +81,25 @@ python tools/mc_lcoe_from_energy.py
 
 # Re-generate plots used in thesis
 python tools/plot_offtilt_results.py
+```
 
+
+```markdown
+### Examiner quick links (verification)
+- Annual offset sweeps (PDF):
+  - [`tables/annual_energy_vs_offset_WC_2023.pdf`](tables/annual_energy_vs_offset_WC_2023.pdf)
+  - [`tables/annual_energy_vs_offset_NC_2023.pdf`](tables/annual_energy_vs_offset_NC_2023.pdf)
+  - [`tables/annual_energy_vs_offset_WC_2024.pdf`](tables/annual_energy_vs_offset_WC_2024.pdf)
+  - [`tables/annual_energy_vs_offset_NC_2024.pdf`](tables/annual_energy_vs_offset_NC_2024.pdf)
+- Bin attribution & gains:
+  - [`tables/bin_data_results/`](tables/bin_data_results/)
+  - [`tables/expected_gain_by_month_WC.csv`](tables/expected_gain_by_month_WC.csv)
+  - [`tables/expected_gain_by_month_NC.csv`](tables/expected_gain_by_month_NC.csv)
+  - [`tables/expected_gain_by_season_WC.csv`](tables/expected_gain_by_season_WC.csv)
+  - [`tables/expected_gain_by_season_NC.csv`](tables/expected_gain_by_season_NC.csv)
+- Daily energy audit:
+  - [`tables/daily_energy_all.csv`](tables/daily_energy_all.csv)
+```
 
 ## 4  Data Sources
 
@@ -125,3 +151,5 @@ SOFTWARE.
 - The link to this GitHub repository is included in **Appendix C** of the thesis under *“Repository and Reproducibility”*.  
 - The project satisfies the **Graduate Attributes GA 4, 5, 6, 8 and 9** through original data processing, simulation design, and professional presentation of technical communication.  
 - Repository maintained by **Georgene de Wet (DWTGEO002)**, University of Cape Town, 2025.
+
+
