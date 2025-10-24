@@ -22,26 +22,32 @@ All results, figures, and tables cited in the thesis (e.g., annual offset sweeps
 ---
 
 ## 2  Folder Structure
-results_and_sim_docs/
-├── bins/ # Classified weather/irradiance bins for daily analysis
-├── configs/ # YAML configuration files for each simulation scope
-├── data_raw/ # Raw NASA POWER and PVDAQ datasets (not pushed to GitHub)
-├── figs/ # Generated plots used in report figures
-├── hourlies/ # Hourly energy and irradiance time series
-├── inputs/ # run_scope.yaml, sites.csv and supporting input lists
-├── manifests/ # CSV manifests of aligned datasets by site and year
-├── out/ # Daily and annual energy summaries
-├── qc/ # Quality-control logs and patch notes
-├── selection/ # Selected representative days per bin and site
-├── tables/ # CSV exports cited in the thesis (e.g., LCOE priors)
-├── tools/ # All simulation and plotting scripts (Python)
-│ ├── run_annual_policy.py
-│ ├── daily_sweep_direct.py
-│ ├── mc_lcoe_from_energy.py
-│ ├── plot_offtilt_results.py
-│ └── … (other helper scripts)
-└── README.md # This file
 
+adaptive-pv-tilt-DWTGEO002/
+├─ bins/ # Classified weather/irradiance bins for daily analysis
+├─ configs/ # YAML configs for run scopes (e.g., run_scope.yaml)
+├─ data_raw/ # Raw/aligned NASA POWER & PVDAQ inputs (large; may be ignored in Git)
+├─ figs/ # Generated plots used in the report
+├─ hourlies/ # Hourly POA / AC time-series exports
+├─ inputs/ # Site lists, run inputs (e.g., sites.csv)
+├─ manifests/ # Per-site/year manifests of aligned datasets
+├─ out/ # Daily & annual energy summaries (lightweight)
+├─ outputs/ # Heavier scratch outputs (often git-ignored)
+├─ poa_col/ # POA irradiance collections/exports used by plots
+├─ pv-tilt/ # (Project-specific helpers or notebooks if present)
+├─ qc/ # Quality-control logs and patch commands
+├─ selection/ # Selected representative days per bin and site
+├─ tables/ # CSV exports cited in the thesis (e.g., LCOE priors, bin summaries)
+├─ thesis/ # LaTeX report (if included for convenience)
+├─ tmp/ # Temporary files / caches (git-ignored)
+├─ tools/ # Simulation & plotting scripts (Python)
+│ ├─ run_annual_policy.py
+│ ├─ daily_sweep_direct.py
+│ ├─ mc_lcoe_from_energy.py
+│ ├─ plot_offtilt_results.py
+│ └─ ... (other helper scripts)
+├─ README.md
+└─ README_patch_commands.txt
 
 ---
 
