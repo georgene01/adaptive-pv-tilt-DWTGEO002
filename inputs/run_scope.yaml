@@ -1,0 +1,12 @@
+# Run scope for Results chapter reproducibility
+year: 2024
+time_base:
+  frequency: hourly        # POWER native temporal resolution
+  tz: Africa/Johannesburg  # convert from UTC to SAST
+date_range:
+  start: 2024-01-01
+  end: 2024-12-31
+notes: >
+  Use these values for all baseline and comparison scenarios
+  (baseline SAT, daily optimal offset sweep, seasonal-constant offset,
+  year-constant offset). Keep this file under version control.

@@ -1,0 +1,23 @@
+name: Trina TSM-415DE09R.08 (Vertex S 415 W, 2023)
+source: Methodology Table 1.3; Trina datasheet Rev. 2023-08
+electrical_model: sapm_single_diode
+stc:
+  p_stc_w: 415.0
+  voc_stc_v: 41.8
+  isc_stc_a: 12.6
+  vmpp_stc_v: 34.6
+  impp_stc_a: 12.0
+temperature_coefficients:
+  gamma_p_per_c: -0.0034
+  beta_voc_v_per_c: -0.26
+  alpha_isc_a_per_c: 0.05
+thermal:
+  noct_nmott_c: 45.0
+  mounting_class: open_rack_ventilated_back
+mechanical:
+  dimensions_mm:
+    length: 1762
+    width: 1134
+  area_m2: 1.999
+notes: All numeric values to match methodology; gamma_p set to typical c-Si value
+  (-0.34 %/°C). Update if Appendix C lists module-specific gamma.

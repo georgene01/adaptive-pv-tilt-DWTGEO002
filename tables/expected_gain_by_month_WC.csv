@@ -1,0 +1,13 @@
+month,month_name,dominant_bin,default_angle_deg,scheduled_gain_pct
+1,January,clear,14.0,1.7110828513355112
+2,February,clear,14.0,1.6742205273141955
+3,March,clear,14.0,1.6373407098257104
+4,April,clear,14.0,1.5273884414410985
+5,May,clear,14.0,1.5550228643304878
+6,June,clear,14.0,1.388045872663082
+7,July,partly_cloudy,8.0,1.0118422470119284
+8,August,clear,14.0,1.3811612271379403
+9,September,clear,14.0,1.405078004946687
+10,October,clear,14.0,1.5652303065696163
+11,November,clear,14.0,1.5803297427741163
+12,December,clear,14.0,1.6281619192864583

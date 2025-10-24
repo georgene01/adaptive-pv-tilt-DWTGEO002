@@ -1,0 +1,66 @@
+meta:
+  year: 2024
+  sites_file: inputs/sites.csv
+  models_file: configs/models.yaml
+  module_file: configs/module_trina415.yaml
+  inverter_file: configs/inverter_sg2500hv.yaml
+  tracker_file: configs/tracker_sat.yaml
+  exemplars_manifest: selection/exemplars_manifest.csv
+  notes: Frozen on Step 1.6; used by downstream scripts for reproducible results.
+scenarios:
+  A_baseline_SAT:
+    description: Backtracking SAT, zero offset (δ=0°)
+    tracker:
+      backtrack: true
+      offset_deg: 0.0
+    apply_to:
+      sites:
+      - NC
+      - WC
+  B_seasonal_constant_offset:
+    description: One fixed offset per season (DJF/MAM/JJA/SON) applied across days
+      in that season
+    tracker:
+      backtrack: true
+    optimisation:
+      per: season
+      parameter: offset_deg
+      search:
+        min_deg: -30.0
+        max_deg: 30.0
+        step_deg: 2.0
+      objective: maximise_daily_energy
+    apply_to:
+      sites:
+      - NC
+      - WC
+  C_year_constant_offset:
+    description: One fixed offset δ* applied for the full year
+    tracker:
+      backtrack: true
+    optimisation:
+      per: year
+      parameter: offset_deg
+      search:
+        min_deg: -30.0
+        max_deg: 30.0
+        step_deg: 2.0
+      objective: maximise_annual_energy
+    apply_to:
+      sites:
+      - NC
+      - WC
+  D_daily_offset_sweep_exemplars:
+    description: For selected exemplar days, sweep δ to show energy vs offset
+    tracker:
+      backtrack: true
+    sweep:
+      parameter: offset_deg
+      min_deg: -30.0
+      max_deg: 30.0
+      step_deg: 2.0
+    apply_to:
+      sites:
+      - NC
+      - WC
+      exemplars_csv: selection/exemplars_manifest.csv

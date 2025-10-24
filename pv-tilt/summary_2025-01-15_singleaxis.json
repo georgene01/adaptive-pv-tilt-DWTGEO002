@@ -1,0 +1,39 @@
+{
+  "date": "2025-01-15",
+  "lat": -33.9249,
+  "lon": 18.4241,
+  "mode": "singleaxis",
+  "modules": 1,
+  "E_Wh_tracking": 4885.3148874972185,
+  "E_Wh_opt": 4974.975338941209,
+  "delta_Wh": 89.6604514439905,
+  "delta_pct": 1.8353054717814565,
+  "params": {
+    "albedo": 0.2,
+    "p_stc": 440.0,
+    "gamma": -0.0045,
+    "noct": 45.0,
+    "u0": 25.0,
+    "u1": 6.84,
+    "use_faiman": true,
+    "axis_azm": 0.0,
+    "axis_tilt": 0.0,
+    "max_angle": 60.0,
+    "backtrack": true,
+    "gcr": 0.3,
+    "offset_range": [
+      -12,
+      12,
+      1
+    ],
+    "tilt_bounds": [
+      0.0,
+      60.0
+    ],
+    "eta_inverter": 0.96,
+    "dc_wiring_loss": 0.02
+  },
+  "validation": {
+    "error": "'P_AC_W'"
+  }
+}

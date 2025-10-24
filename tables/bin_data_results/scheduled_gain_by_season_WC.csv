@@ -1,0 +1,5 @@
+season,dominant_bin,scheduled_gain_pct,default_angle_deg,default_only_gain_pct
+DJF (summer),clear,1.6709624276885677,14.0,1.665774747453121
+MAM (autumn),clear,1.5729468918857799,14.0,1.558970935919954
+JJA (winter),clear,1.2593826054618888,14.0,1.2122714899428086
+SON (spring),clear,1.5169832729051358,14.0,1.4952917551644551

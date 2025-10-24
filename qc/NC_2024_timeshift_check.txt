@@ -1,0 +1,4 @@
+Timeshift sanity checklist (UTC -> Africa/Johannesburg):
+- Confirm solar noon (UTC) +2h aligns with expected SAST solar noon.
+- Plot GHI diurnal curve; check sunrise/sunset transitions.
+- If offset seen, shift timestamps accordingly before analysis.

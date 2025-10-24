@@ -1,0 +1,13 @@
+month,month_name,clear,cloudy,mostly_clear,partly_cloudy
+1,January,12.0,0.0,16.0,3.0
+2,February,17.0,0.0,8.0,4.0
+3,March,18.0,1.0,11.0,1.0
+4,April,17.0,1.0,9.0,3.0
+5,May,28.0,0.0,1.0,2.0
+6,June,24.0,0.0,2.0,4.0
+7,July,31.0,0.0,0.0,0.0
+8,August,28.0,0.0,1.0,2.0
+9,September,22.0,2.0,3.0,3.0
+10,October,23.0,0.0,8.0,0.0
+11,November,17.0,1.0,11.0,1.0
+12,December,16.0,0.0,13.0,2.0

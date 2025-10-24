@@ -1,0 +1,136 @@
+import math, numpy as np
+np.random.seed(42)  # reproducible; remove if you want fresh draws
+
+# -------------------------
+# Plant size (fixed today)
+# -------------------------
+AC_MW = 50.0
+DCAC  = 1.30
+DC_MW = AC_MW * DCAC
+
+# -------------------------
+# Year-1 AC energy MWh (your results at 15-min, scaled)
+# -------------------------
+E1 = {
+    ("WC","baseline"): 55486.4,
+    ("WC","offpoint"): 54631.9,
+    ("NC","baseline"): 62188.0,
+    ("NC","offpoint"): 61046.2,
+}
+
+# -------------------------
+# Finance & performance
+# -------------------------
+N = 30  # years
+
+def draw_discount_rate(n):
+    # Triangular(5, 6.5, 8) %
+    low, mode, high = 0.05, 0.065, 0.08
+    u = np.random.rand(n)
+    c = (mode - low) / (high - low)
+    out = np.where(u < c,
+                   low + np.sqrt(u * (high - low) * (mode - low)),
+                   high - np.sqrt((1 - u) * (high - low) * (high - mode)))
+    return out
+
+def draw_degradation(n):
+    d = np.random.normal(0.0055, 0.0015, size=n)  # 0.55% ± 0.15%
+    return np.clip(d, 0.002, 0.010)
+
+def draw_availability(n):
+    a = np.random.normal(0.985, 0.005, size=n)
+    return np.clip(a, 0.970, 0.995)
+
+def draw_interannual_factor(n):
+    # Multiplicative lognormal with sigma ≈ 4% in log space
+    sigma = 0.04
+    return np.random.lognormal(mean=0.0, sigma=sigma, size=n)
+
+# -------------------------
+# Cost draws (all real $)
+# -------------------------
+def draw_capex_dc_per_kWdc(n):   return np.random.uniform(450, 600, size=n)
+def draw_bos_soft_per_kWdc(n):   return np.random.uniform(250, 380, size=n)
+def draw_capex_ac_per_kWac(n):   return np.random.uniform( 90, 140, size=n)
+def draw_fix_om_per_kWac_y(n):   return np.random.uniform( 12,  18, size=n)
+def draw_var_om_per_MWh(n):      return np.random.uniform(  0, 1.5, size=n)
+def draw_inv_repl_per_kWac(n):   return np.random.uniform( 15,  35, size=n)
+
+INV_REPL_YEARS = [12, 24]
+SALVAGE = 0.0
+
+# -------------------------
+# LCOE core
+# -------------------------
+def lcoe_mc(E1_MWh, sims=5000):
+    r   = draw_discount_rate(sims)
+    d   = draw_degradation(sims)
+    A   = draw_availability(sims)
+    fIA = draw_interannual_factor(sims)
+
+    cap_dc  = draw_capex_dc_per_kWdc(sims)
+    bos     = draw_bos_soft_per_kWdc(sims)
+    cap_ac  = draw_capex_ac_per_kWac(sims)
+    om_fix  = draw_fix_om_per_kWac_y(sims)
+    om_var  = draw_var_om_per_MWh(sims)
+    inv_rep = draw_inv_repl_per_kWac(sims)
+
+    # Year-0 capex
+    C0 = cap_dc * DC_MW * 1e3 + bos * DC_MW * 1e3 + cap_ac * AC_MW * 1e3
+
+    # Discount factors per year 0..N
+    df = 1.0 / (1.0 + r[:,None]) ** np.arange(0, N+1)[None,:]
+
+    # Annual energy path (1..N) with availability, degradation, and interannual factor
+    years = np.arange(1, N+1)
+    Ey = (E1_MWh * fIA[:,None]) * A[:,None] * ((1.0 - d)[:,None] ** (years-1))
+
+    # Annual costs (1..N): fixed O&M and variable O&M
+    Cy = np.zeros_like(Ey)
+    Cy += om_fix[:,None] * AC_MW * 1e3
+    Cy += om_var[:,None] * Ey
+
+    # Inverter replacements
+    for yr in INV_REPL_YEARS:
+        idx = yr - 1  # since Ey indexes 0..N-1 for years 1..N
+        Cy[:, idx] += inv_rep * AC_MW * 1e3
+
+    # Salvage at year N (as a cost; use negative for credit)
+    C_salv = np.zeros(sims)
+    C_salv += SALVAGE
+
+    # Present value sums
+    num = C0 + (Cy * df[:,1:]).sum(axis=1) + C_salv * df[:,N]
+    den = (Ey * df[:,1:]).sum(axis=1)
+    L = num / den  # $/MWh
+    return {
+        "mean": float(np.mean(L)),
+        "p05":  float(np.percentile(L, 5)),
+        "p95":  float(np.percentile(L, 95)),
+        "samples": L,  # keep if you want to plot histograms
+    }
+
+# -------------------------
+# Run all four cases
+# -------------------------
+labels = [("WC","baseline"), ("WC","offpoint"),
+          ("NC","baseline"), ("NC","offpoint")]
+
+out = []
+for k in labels:
+    stats = lcoe_mc(E1[k], sims=5000)
+    out.append((k[0], k[1], stats["mean"], stats["p05"], stats["p95"]))
+
+# Pretty print
+w = max(len(f"{s}/{p}") for s,p,_,_,_ in out)
+print("\nMonte-Carlo LCOE (real $/MWh, 5–95%):")
+for site, pol, m, p5, p95 in out:
+    name = f"{site}/{pol}"
+    print(f"  {name:<{w}}  {m:6.1f}  ({p5:6.1f}–{p95:6.1f})")
+
+# If you want to save CSV:
+# import csv
+# with open("lcoe_summary.csv","w",newline="") as f:
+#     wtr = csv.writer(f)
+#     wtr.writerow(["site","policy","mean_$/MWh","p05","p95"])
+#     for site, pol, m, p5, p95 in out: wtr.writerow([site, pol, m, p5, p95])

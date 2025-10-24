@@ -1,0 +1,26 @@
+name: Sungrow SG2500-HV (central inverter, 2022)
+source: Methodology Table 1.4; Sungrow datasheet Rev. 2022; CEC coefficients in Appendix
+  C
+ratings:
+  s_ac_max_kva: 2500.0
+  p_ac_nom_mw: 2.5
+  vac_v: 600.0
+  frequency_hz: 50/60
+  v_dc_max_v: 1500.0
+  i_dc_max_a: 3600.0
+  euro_efficiency_pct: 98.7
+  night_aux_w: 100.0
+efficiency_model:
+  type: cec_sandia
+  coefficients:
+    cec_c0: null
+    cec_c1: null
+    cec_c2: null
+    cec_pnt: null
+    cec_ps0: null
+    cec_ps1: null
+  notes: Populate coefficients from Appendix C to reproduce weighted efficiency curve
+    η_inv(Pdc).
+clipping:
+  enabled: true
+  p_ac_limit_mw: 2.5

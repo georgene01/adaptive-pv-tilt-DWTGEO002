@@ -1,0 +1,59 @@
+transposition:
+  baseline:
+    name: haydavies
+    pvlib_fn: irradiance.haydavies
+    notes: Used for main POA decomposition/transposition.
+  alternates:
+  - name: perez
+    pvlib_fn: irradiance.perez
+    use_for_sensitivity: true
+  - name: isotropic
+    pvlib_fn: irradiance.isotropic
+    use_for_sensitivity: true
+temperature:
+  baseline:
+    name: faiman
+    pvlib_fn: temperature.faiman
+    parameters:
+      u0_W_m2K: 25.0
+      u1_W_s_m3K: 6.0
+    inputs:
+    - poa_global
+    - temp_air
+    - wind_speed
+  alternates:
+  - name: noct
+    pvlib_fn: temperature.noct_sam
+    use_for_sensitivity: true
+    parameters:
+      noct_c: 45.0
+  - name: sandia
+    pvlib_fn: temperature.sapm_cell
+    use_for_sensitivity: true
+    parameters:
+      a: -3.47
+      b: -0.0594
+      deltaT: 3.0
+electrical:
+  baseline:
+    name: sapm_single_diode
+    pvlib_fns:
+      effective_irradiance: pvsystem.sapm_effective_irradiance
+      iv_curve: pvsystem.calcparams_desoto
+      single_diode: pvsystem.singlediode
+    temperature_correction: gamma_p_only
+inverter:
+  model: cec_sandia
+  coeff_source: configs/inverter_sg2500hv.yaml
+  clipping:
+    enabled: true
+    limit_mw: 2.5
+  tare_power_w: 100
+pr_definition:
+  formula: PR = E_AC / (G_POA_ref * P_STC)
+  g_poa_ref_wh_m2: 1000.0
+timekeeping:
+  assumptions:
+    input_zone: UTC
+    analysis_zone: Africa/Johannesburg
+    interpretation: POWER hourly data treated as hour-ending; converted to SAST.

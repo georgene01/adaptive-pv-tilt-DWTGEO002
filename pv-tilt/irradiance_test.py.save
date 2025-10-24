@@ -1,0 +1,35 @@
+import pvlib
+import pandas as pd
+from pvlib.location import Location
+
+# Define site (Cape Town example)
+site = Location(-33.9249, 18.4241, 'Africa/Johannesburg', 25, 'Cape Town')
+
+# Time range: one day, hourly
+times = pd.date_range('2025-01-01', '2025-01-02', freq='1h', tz=site.tz)
+
+# Get solar position
+solpos = site.get_solarposition(times)
+
+# Example: make up a constant GHI (global horizontal irradiance) profile
+ghi = pd.Series(800, index=times)  # 800 W/m^2 constant just to test
+
+# Use Erbs model to split GHI into DNI + DHI
+erbs = pvlib.irradiance.erbs(ghi, solpos['zenith'], times)
+dni = erbs['dni']
+dhi = erbs['dhi']
+
+# Now calculate POA irradiance for a tilt=30°, azimuth=0° (north-facing in SA)
+poa = pvlib.irradiance.get_total_irradiance(
+    surface_tilt=30,
+    surface_azimuth=0,
+    dni=dni,
+    ghi=ghi,
+    dhi=dhi,
+    solar_zenith=solpos['zenith'],
+    solar_azimuth=solpos['azimuth'],
+    model='haydavies'
+)
+
+print(poa[['poa_global', 'poa_direct', 'poa_diffuse']].head())
+

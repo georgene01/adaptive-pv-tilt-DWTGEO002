@@ -1,0 +1,13 @@
+month,month_name,top_bin,top_count,total_days,pct
+1,January,mostly_clear,16,31,51.61290322580645
+2,February,clear,17,29,58.62068965517241
+3,March,clear,18,31,58.064516129032256
+4,April,clear,17,30,56.666666666666664
+5,May,clear,28,31,90.3225806451613
+6,June,clear,24,30,80.0
+7,July,clear,31,31,100.0
+8,August,clear,28,31,90.3225806451613
+9,September,clear,22,30,73.33333333333333
+10,October,clear,23,31,74.19354838709677
+11,November,clear,17,30,56.666666666666664
+12,December,clear,16,31,51.61290322580645

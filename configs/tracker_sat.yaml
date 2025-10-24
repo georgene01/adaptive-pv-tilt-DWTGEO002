@@ -1,0 +1,16 @@
+name: Single-axis tracker (N–S axis)
+geometry:
+  axis_tilt_deg: 0.0
+  axis_azimuth_deg: 0.0
+  max_tilt_deg: 60.0
+  min_tilt_deg: -60.0
+  backtrack: true
+  gcr: 0.3
+  albedo: 0.2
+array_layout:
+  row_pitch_m_min: 6.0
+  module_width_m: 1.134
+  module_length_m: 1.762
+  module_area_m2: 1.999
+notes: Geometry consistent with methodology §1.2.3; pvlib.tracking.singleaxis with
+  backtracking.

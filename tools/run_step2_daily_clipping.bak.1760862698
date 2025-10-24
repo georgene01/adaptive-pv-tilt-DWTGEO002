@@ -1,0 +1,166 @@
+#!/usr/bin/env python3
+import argparse, json, sys
+import pandas as pd
+
+def tolerant_col(df, names):
+    """Return first matching column by tolerant (lowercased) comparison, else None."""
+    lower = {c.lower(): c for c in df.columns}
+    for n in names:
+        key = n.lower()
+        if key in lower:
+            return lower[key]
+    return None
+
+def find_irradiance_series(df, explicit=None):
+    """Return a float Series for POA (preferred) or GHI as proxy."""
+    if explicit:
+        if explicit in df.columns:
+            return df[explicit].astype(float)
+        # tolerant lookup
+        lc = {c.lower(): c for c in df.columns}
+        key = explicit.lower()
+        if key in lc:
+            return df[lc[key]].astype(float)
+        raise KeyError(f"--poa_col '{explicit}' not found in CSV headers.")
+    # try common POA names
+    poa = tolerant_col(df, ["poa_global","poa","poa(w/m2)","poa_irr","poa-irradiance","ghi_poa","poa_kwhm2"])
+    if poa:
+        return df[poa].astype(float)
+    # try summing components if present
+    comps = []
+    for k in ["poa_direct","poa_diffuse","poa_sky_diffuse","poa_ground_diffuse"]:
+        col = tolerant_col(df, [k])
+        if col: comps.append(df[col].astype(float))
+    if len(comps) >= 2:
+        return sum(comps)
+    # fall back to GHI as proxy
+    ghi = tolerant_col(df, ["ghi_wm2","ghi"])
+    if ghi:
+        return df[ghi].astype(float)
+    raise KeyError("Could not find irradiance (POA or GHI). Provide --poa_col if needed.")
+
+def find_ac_raw(df, assume_col=None, pac_units="kw"):
+    """Return AC raw power [kW] series if present, else None."""
+    candidates = []
+    if assume_col:
+        candidates.append(assume_col)
+    candidates += ["pac","pac_kw","p_ac_kw","p_ac_raw_kw","ac_kw","p_ac","p_ac_raw"]
+    name = tolerant_col(df, candidates)
+    if not name:
+        return None
+    s = df[name].astype(float)
+    if pac_units.lower() == "mw":
+        s = 1000.0 * s
+    return s
+
+def per_kwdc_ac_from_irr(irr_wm2, dc_eff, inv_eff):
+    # DC per-kWdc ~= (W/m2 / 1000) * dc_eff  ; AC per-kWdc ~= DC * inv_eff
+    return (irr_wm2 / 1000.0) * float(dc_eff) * float(inv_eff)
+
+def add_clipping_columns(df_in,
+                         p_ac_rated_kw,
+                         plant_ac_kw=None,
+                         dcac_ratio=1.30,
+                         inverter_eff=0.96,
+                         dc_system_eff=0.90,
+                         dt_minutes=60,
+                         assume_pac_col=None,
+                         pac_units="kw",
+                         poa_col=None):
+    """
+    Compute plant-level AC (with clipping) and clipping energy for one day.
+    Returns a tiny DataFrame with one row: date,site,policy,clip_kWh_day,ac_kWh_day.
+    """
+    df = df_in.copy()
+
+    # Find or derive raw AC power [kW]
+    pac_raw_kw = find_ac_raw(df, assume_col=assume_pac_col, pac_units=pac_units)
+    if pac_raw_kw is None:
+        irr = find_irradiance_series(df, explicit=poa_col)
+        # per-kWdc AC
+        p_ac_per_kwdc = per_kwdc_ac_from_irr(irr, dc_system_eff, inverter_eff)
+        # scale up to plant DC, then that's raw AC before clipping
+        if plant_ac_kw is None:
+            raise ValueError("plant_ac_kw is required when deriving from irradiance.")
+        plant_dc_kw = float(plant_ac_kw) * float(dcac_ratio)
+        pac_raw_kw = p_ac_per_kwdc * plant_dc_kw
+
+    # Clip at inverter/plant AC nameplate
+    p_ac_rated_kw = float(p_ac_rated_kw)
+    pac_clip_kw = pac_raw_kw.clip(upper=p_ac_rated_kw)
+    pclip_kw    = (pac_raw_kw - p_ac_rated_kw).clip(lower=0.0)
+
+    # Energies
+    dt_h = float(dt_minutes)/60.0
+    e_ac_kwh   = float(pac_clip_kw.sum() * dt_h)
+    e_clip_kwh = float(pclip_kw.sum()     * dt_h)
+
+    # Return a single-row dataframe with the two energies (kWh)
+    return e_clip_kwh, e_ac_kwh
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--site", required=True)
+    ap.add_argument("--weather", required=True, help="CSV with at least irradiance (POA or GHI) OR an AC power column.")
+    ap.add_argument("--date", required=True)
+    ap.add_argument("--policy", required=True, choices=["baseline","offpoint","bin","annual"])
+    ap.add_argument("--min_deg", type=float, default=0.0)
+    ap.add_argument("--max_deg", type=float, default=0.0)
+    ap.add_argument("--step_deg", type=float, default=1.0)
+    ap.add_argument("--offset_deg", type=float, default=0.0)
+
+    ap.add_argument("--p_ac_rated_kw", type=float, required=True, help="Plant AC nameplate (kW).")
+    ap.add_argument("--plant_ac_kw", type=float, default=None, help="Same as p_ac_rated_kw in most cases; used to compute DC capacity with dcac_ratio when deriving from irradiance.")
+    ap.add_argument("--dcac_ratio", type=float, default=1.30)
+    ap.add_argument("--inverter_eff", type=float, default=0.96)
+    ap.add_argument("--dc_system_eff", type=float, default=0.90)
+    ap.add_argument("--dt_minutes", type=int, default=60)
+
+    ap.add_argument("--assume_pac_col", type=str, default=None, help="If AC raw column name exists in input, give it here.")
+    ap.add_argument("--pac_units", type=str, choices=["kw","mw"], default="kw")
+    ap.add_argument("--poa_col", type=str, default=None, help="If set, use this column as irradiance (POA or GHI).")
+
+    ap.add_argument("--write_daily_csv", type=str, default=None)
+
+    args = ap.parse_args()
+
+    # Read CSV with delimiter auto-detection
+    df_in = pd.read_csv(args.weather, sep=None, engine="python")
+
+    # Compute
+    clip_kwh, ac_kwh = add_clipping_columns(
+        df_in,
+        p_ac_rated_kw=args.p_ac_rated_kw,
+        plant_ac_kw=(args.plant_ac_kw if args.plant_ac_kw is not None else args.p_ac_rated_kw),
+        dcac_ratio=args.dcac_ratio,
+        inverter_eff=args.inverter_eff,
+        dc_system_eff=args.dc_system_eff,
+        dt_minutes=args.dt_minutes,
+        assume_pac_col=args.assume_pac_col,
+        pac_units=args.pac_units,
+        poa_col=args.poa_col,
+    )
+
+    # Write single-row CSV if requested
+    if args.write_daily_csv:
+        out = pd.DataFrame([{
+            "date": args.date,
+            "site": args.site,
+            "policy": args.policy,
+            "clip_kWh_day": clip_kwh,
+            "ac_kWh_day": ac_kwh,
+        }])
+        # append or create
+        header = not Path(args.write_daily_csv).exists()
+        out.to_csv(args.write_daily_csv, index=False, mode=("w" if header else "a"), header=header)
+
+    # Always print a concise JSON line
+    print(json.dumps({
+        "date": args.date,
+        "site": args.site,
+        "policy": args.policy,
+        "clip_kWh_day": clip_kwh,
+        "ac_kWh_day": ac_kwh
+    }))
+if __name__ == "__main__":
+    main()

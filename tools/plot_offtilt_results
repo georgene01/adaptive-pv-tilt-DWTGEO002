@@ -1,0 +1,228 @@
+# tools/plot_offtilt_results_clean.py
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+import os
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+
+# ------------------ Styling ------------------
+plt.rcParams.update({
+    "figure.dpi": 120,
+    "font.size": 10,
+    "axes.grid": True,
+    "grid.alpha": 0.25,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "legend.frameon": False,
+    "savefig.bbox": "tight",
+})
+# We’ll manage spacing manually (no constrained_layout to avoid title/label collisions)
+plt.rcParams["figure.constrained_layout.use"] = False
+
+BIN_ORDER = ["clear", "mostly_clear", "partly_cloudy", "cloudy"]
+
+def _ensure_dirs(path: str):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+
+def _sorted_bins_found(found):
+    base = [b for b in BIN_ORDER if b in found]
+    extra = sorted([b for b in found if b not in BIN_ORDER])
+    return base + extra
+
+# ------------------------------------------------------------
+# 1) BAR CURVES: mean gain vs 0° by off-tilt (faceted by bin)
+# ------------------------------------------------------------
+def plot_bar_curves(site, perbin_csv, out_pdf):
+    _ensure_dirs(out_pdf)
+    df = pd.read_csv(perbin_csv)
+
+    bins_order = _sorted_bins_found(df["bin_id"].unique())
+    # Prepare a fixed 2x2 grid; if fewer than 4 bins, we blank the extras
+    n_bins = len(bins_order)
+    fig = plt.figure(figsize=(9, 7))
+    gs = fig.add_gridspec(2, 2, left=0.08, right=0.98, bottom=0.08, top=0.88, wspace=0.25, hspace=0.35)
+
+    axes = []
+    for r in range(2):
+        for c in range(2):
+            axes.append(fig.add_subplot(gs[r, c]))
+
+    # Plot each bin
+    for i, ax in enumerate(axes):
+        if i < n_bins:
+            b = bins_order[i]
+            S = df[df["bin_id"] == b].sort_values("deg")
+            if S.empty:
+                ax.axis("off"); continue
+            ax.bar(S["deg"], S["mean_gain_pct_vs0"], width=1.6, zorder=3)
+            th = int(S["theta_hat"].iloc[0])
+            n_days = int(S["n_days"].iloc[0])
+            ax.axvline(th, linestyle="--", linewidth=1.25, zorder=4)
+            # Clean titles; no long text
+            ax.set_title(f"{b}  (n={n_days},  θ̂={th}°)", pad=6)
+            ax.set_xlim(S["deg"].min() - 1, S["deg"].max() + 1)
+            ax.set_ylim(bottom=min(0, S["mean_gain_pct_vs0"].min()) - 0.05)
+            ax.tick_params(labelsize=9)
+        else:
+            ax.axis("off")
+
+    # Common x/y labels once (prevents overlap)
+    fig.text(0.5, 0.02, "Off-tilt angle (deg)", ha="center", va="center", fontsize=11)
+    fig.text(0.015, 0.48, "Mean gain vs 0° (%)", ha="center", va="center", rotation="vertical", fontsize=11)
+
+    fig.suptitle(f"{site}: Mean gain vs 0° by off-tilt (per bin)", y=0.95, fontsize=12, weight="semibold")
+    fig.savefig(out_pdf)
+    print(f"[OK] wrote {out_pdf}")
+
+# ------------------------------------------------------------
+# 2) SCATTER: best off-tilt per day (faceted by bin)
+# ------------------------------------------------------------
+def _load_perday_best(site, bins_csv, sweep_dir):
+    bins_df = pd.read_csv(bins_csv)
+    # Normalize date -> YYYY-MM-DD
+    d = bins_df["date"].astype(str).str.replace(r"[\\/\.]", "-", regex=True).str.strip()
+    mask8 = d.str.fullmatch(r"\d{8}", na=False)
+    d.loc[mask8] = d.loc[mask8].str.replace(r"(\d{4})(\d{2})(\d{2})", r"\1-\2-\3", regex=True)
+    bins_df["__date"] = pd.to_datetime(d, errors="coerce")
+    bins_df = bins_df.dropna(subset=["__date"])
+    bins_df["bin_id"] = bins_df["bin_label"].astype(str)
+
+    out = []
+    for date_dt, group in bins_df.groupby("__date"):
+        date_str = date_dt.strftime("%Y-%m-%d")
+        f = os.path.join(sweep_dir, f"{site}_{date_str}.csv")
+        if not os.path.exists(f):
+            continue
+        try:
+            day = pd.read_csv(f)
+        except Exception:
+            continue
+        if {"deg", "E_KWh"}.issubset(day.columns):
+            idx = day["E_KWh"].idxmax()
+            out.append({
+                "date": date_dt,
+                "best_deg": int(day.loc[idx, "deg"]),
+                "bin_id": group["bin_id"].iloc[0]
+            })
+    return pd.DataFrame(out)
+
+def plot_scatter_best(site, bins_csv, sweep_dir, out_pdf):
+    _ensure_dirs(out_pdf)
+    B = _load_perday_best(site, bins_csv, sweep_dir)
+    if B.empty:
+        print(f"[WARN] no per-day best data for {site}; skipped {out_pdf}")
+        return
+
+    bins_order = _sorted_bins_found(B["bin_id"].unique())
+
+    fig = plt.figure(figsize=(9, 7))
+    gs = fig.add_gridspec(2, 2, left=0.08, right=0.98, bottom=0.08, top=0.88, wspace=0.25, hspace=0.35)
+    axes = []
+    for r in range(2):
+        for c in range(2):
+            axes.append(fig.add_subplot(gs[r, c]))
+
+    for i, ax in enumerate(axes):
+        if i < len(bins_order):
+            b = bins_order[i]
+            bb = B[B["bin_id"] == b].sort_values("date")
+            if bb.empty:
+                ax.axis("off"); continue
+            ax.scatter(bb["date"], bb["best_deg"], s=12, zorder=3)
+            ax.set_title(f"{b} (days={len(bb)})", pad=6)
+            ax.tick_params(labelsize=9)
+            # Monthly ticks for readability
+            ax.xaxis.set_major_locator(mdates.MonthLocator(interval=2))
+            ax.xaxis.set_major_formatter(mdates.DateFormatter("%b"))
+            ax.set_ylim(bb["best_deg"].min() - 2, bb["best_deg"].max() + 2)
+        else:
+            ax.axis("off")
+
+    fig.text(0.5, 0.02, "Date (month)", ha="center", va="center", fontsize=11)
+    fig.text(0.015, 0.48, "Best off-tilt (deg)", ha="center", va="center", rotation="vertical", fontsize=11)
+
+    fig.suptitle(f"{site}: Best off-tilt per day by bin", y=0.95, fontsize=12, weight="semibold")
+    fig.savefig(out_pdf)
+    print(f"[OK] wrote {out_pdf}")
+
+# ------------------------------------------------------------
+# 3) BIN COUNTS: horizontal bars with inline % labels
+# ------------------------------------------------------------
+def plot_bin_counts(site, bins_csv, out_pdf, out_table_csv):
+    _ensure_dirs(out_pdf); _ensure_dirs(out_table_csv)
+    bins_df = pd.read_csv(bins_csv)
+    if "bin_label" not in bins_df.columns:
+        raise SystemExit(f"'bin_label' column not found in {bins_csv}")
+
+    counts = (bins_df["bin_label"].astype(str)
+              .value_counts()
+              .rename_axis("bin_id")
+              .to_frame("n_days")
+              .reset_index())
+    counts["pct"] = 100.0 * counts["n_days"] / counts["n_days"].sum()
+    # Order bins consistently
+    order = _sorted_bins_found(counts["bin_id"].unique())
+    counts = counts.set_index("bin_id").loc[order].reset_index()
+
+    counts.to_csv(out_table_csv, index=False)
+    print(f"[OK] wrote {out_table_csv}")
+
+    fig = plt.figure(figsize=(7.5, 4.6))
+    ax = fig.add_subplot(111)
+    ax.barh(counts["bin_id"], counts["n_days"], zorder=3)
+    ax.set_xlabel("Days")
+    ax.set_ylabel("Bin")
+    ax.set_title(f"{site}: Number of days per bin", pad=8)
+    # inline labels to the right of bars
+    for i, row in counts.iterrows():
+        ax.text(row["n_days"] + max(counts["n_days"]) * 0.01,
+                i,
+                f"{int(row['n_days'])} ({row['pct']:.1f}%)",
+                va="center", fontsize=9)
+    ax.grid(axis="x", alpha=0.25)
+    fig.subplots_adjust(left=0.14, right=0.96, top=0.90, bottom=0.14)
+    fig.savefig(out_pdf)
+    print(f"[OK] wrote {out_pdf}")
+
+# ------------------ Runner ------------------
+if __name__ == "__main__":
+    # NC
+    plot_bar_curves(
+        site="NC",
+        perbin_csv="tables/offtilt_per_bin_NC.csv",
+        out_pdf="figs/offtilt_per_bin_NC_bar_clean2.pdf",
+    )
+    plot_scatter_best(
+        site="NC",
+        bins_csv="bins/bins_NC_2024.csv",
+        sweep_dir="tmp/daily_sweep",
+        out_pdf="figs/offtilt_per_bin_NC_scatter_clean2.pdf",
+    )
+    plot_bin_counts(
+        site="NC",
+        bins_csv="bins/bins_NC_2024.csv",
+        out_pdf="figs/bin_counts_NC_clean2.pdf",
+        out_table_csv="tables/bin_counts_NC.csv",
+    )
+
+    # WC
+    plot_bar_curves(
+        site="WC",
+        perbin_csv="tables/offtilt_per_bin_WC.csv",
+        out_pdf="figs/offtilt_per_bin_WC_bar_clean2.pdf",
+    )
+    plot_scatter_best(
+        site="WC",
+        bins_csv="bins/bins_WC_2024.csv",
+        sweep_dir="tmp/daily_sweep",
+        out_pdf="figs/offtilt_per_bin_WC_scatter_clean2.pdf",
+    )
+    plot_bin_counts(
+        site="WC",
+        bins_csv="bins/bins_WC_2024.csv",
+        out_pdf="figs/bin_counts_WC_clean2.pdf",
+        out_table_csv="tables/bin_counts_WC.csv",
+    )

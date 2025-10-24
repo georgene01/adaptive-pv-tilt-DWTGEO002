@@ -1,0 +1,22 @@
+{
+  "input_rows": 0,
+  "dropped_all_irr_nan": 0,
+  "clamped_neg_ghi_wm2": 0,
+  "clamped_neg_dni_wm2": 0,
+  "clamped_neg_dhi_wm2": 0,
+  "bounded_temp_outliers": 0,
+  "bounded_wind_outliers": 0,
+  "bounded_rh_outliers": 0,
+  "interpolated_counts": {
+    "time_utc": 0,
+    "ghi_wm2": 0,
+    "dni_wm2": 0,
+    "dhi_wm2": 0,
+    "temp_air_c": 0,
+    "wind_speed_ms": 0,
+    "rel_humidity_pct": 0,
+    "pressure_pa": 0,
+    "albedo": 0
+  },
+  "output_rows": 0
+}

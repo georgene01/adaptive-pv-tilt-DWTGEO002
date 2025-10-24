@@ -1,0 +1,5 @@
+poa_global
+poa_direct
+poa_diffuse
+poa_sky_diffuse
+poa_ground_diffuse

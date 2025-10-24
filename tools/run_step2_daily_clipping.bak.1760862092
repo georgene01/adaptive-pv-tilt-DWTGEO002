@@ -1,0 +1,137 @@
+
+#!/usr/bin/env python3
+import argparse, csv, json
+from pathlib import Path
+import pandas as pd
+
+def _maybe_to_kw(series: pd.Series, units: str) -> pd.Series:
+    units = (units or "kw").strip().lower()
+    if units == "mw":
+        return series.astype(float) * 1000.0
+    return series.astype(float)
+
+def add_clipping_columns(df: pd.DataFrame,
+                         p_ac_rated_kw: float,
+                         dt_minutes: int,
+                         assume_pac_col: str = None,
+                         pac_units: str = "kw",
+                         plant_ac_kw: float = None,
+                         dcac_ratio: float = None,
+                         inverter_eff: float = 0.96,
+                         dc_system_eff: float = 0.90,
+                         input_is_unit_kwdc: bool = False) -> pd.DataFrame:
+    """
+    Build plant-level AC power series (kW) and clipping products.
+    Priority:
+      1) If assume_pac_col exists in df: use it (per-kWdc if input_is_unit_kwdc, else plant-level).
+      2) Else, if poa_global exists: derive per-kWdc AC from poa_global with simple efficiency model.
+    """
+    df = df.copy()
+    plant_dc_kw = float(plant_ac_kw) * float(dcac_ratio)
+
+    if assume_pac_col and assume_pac_col in df.columns:
+        if input_is_unit_kwdc:
+            pac_raw_kw = df[assume_pac_col].astype(float) * plant_dc_kw
+        else:
+            pac_raw_kw = _maybe_to_kw(df[assume_pac_col], pac_units)
+    else:
+        # Fallback from irradiance
+        if "poa_global" not in df.columns:
+            raise KeyError(f"Need '{assume_pac_col}' or at least 'poa_global' in the input CSV.")
+        # per-kWdc DC ~ (W/m2 / 1000) * dc_system_eff
+        p_dc_per_kwdc = (df["poa_global"].astype(float) / 1000.0) * float(dc_system_eff)
+        # per-kWdc AC ~ DC * inverter_eff
+        p_ac_per_kwdc = p_dc_per_kwdc * float(inverter_eff)
+        pac_raw_kw = p_ac_per_kwdc * plant_dc_kw
+
+    df["P_ac_raw_kw"] = pac_raw_kw
+
+    # Clipping
+    cap_kw = float(p_ac_rated_kw)
+    df["P_ac_clip_kw"] = df["P_ac_raw_kw"].clip(upper=cap_kw)
+    df["P_clip_kw"]    = (df["P_ac_raw_kw"] - cap_kw).clip(lower=0.0)
+
+    # Energies per step
+    dt_h = float(dt_minutes) / 60.0
+    df["E_ac_clip_kwh"] = df["P_ac_clip_kw"] * dt_h
+    df["E_clip_kwh"]    = df["P_clip_kw"]    * dt_h
+    return df
+
+def append_daily_summary(out_csv: Path, date_str: str, site: str, policy: str,
+                         clip_kwh: float, ac_kwh: float):
+    header = ["date","site","policy","clip_kWh_day","ac_kWh_day"]
+    out_csv.parent.mkdir(parents=True, exist_ok=True)
+    write_header = not out_csv.exists()
+    with out_csv.open("a", newline="") as f:
+        w = csv.writer(f)
+        if write_header: w.writerow(header)
+        w.writerow([date_str, site, policy, clip_kwh, ac_kwh])
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--site", required=True)
+    ap.add_argument("--weather", required=True)
+    ap.add_argument("--date", required=True)
+    ap.add_argument("--min_deg", type=float, default=0.0)
+    ap.add_argument("--max_deg", type=float, default=0.0)
+    ap.add_argument("--step_deg", type=float, default=1.0)
+    ap.add_argument("--offset_deg", type=float, default=0.0)
+    ap.add_argument("--policy", choices=["baseline","offpoint"], default="baseline")
+
+    ap.add_argument("--p_ac_rated_kw", type=float, required=True)
+    ap.add_argument("--plant_ac_kw",   type=float, required=True)
+    ap.add_argument("--dcac_ratio",    type=float, required=True)
+    ap.add_argument("--inverter_eff",  type=float, default=0.96)
+    ap.add_argument("--dc_system_eff", type=float, default=0.90)
+    ap.add_argument("--dt_minutes",    type=int,   default=15)
+
+    ap.add_argument("--assume_pac_col", type=str, default=None)
+    ap.add_argument("--pac_units", type=str, choices=["kw","mw"], default="kw")
+    ap.add_argument("--input_is_unit_kwdc", action="store_true")
+
+    ap.add_argument("--write_daily_csv", type=str, default=None)
+    ap.add_argument("--write_hourly_parquet", type=str, default=None)
+    args = ap.parse_args()
+
+    df_in = pd.read_csv(args.weather)
+
+    df = add_clipping_columns(
+        df_in,
+        p_ac_rated_kw=args.p_ac_rated_kw,
+        dt_minutes=args.dt_minutes,
+        assume_pac_col=args.assume_pac_col,
+        pac_units=args.pac_units,
+        plant_ac_kw=args.plant_ac_kw,
+        dcac_ratio=args.dcac_ratio,
+        inverter_eff=args.inverter_eff,
+        dc_system_eff=args.dc_system_eff,
+        input_is_unit_kwdc=args.input_is_unit_kwdc
+    )
+
+    clip_kwh = float(df["E_clip_kwh"].sum())
+    ac_kwh   = float(df["E_ac_clip_kwh"].sum())
+
+    if args.write_daily_csv:
+        append_daily_summary(Path(args.write_daily_csv),
+                             args.date, args.site, args.policy,
+                             clip_kwh, ac_kwh)
+
+    if args.write_hourly_parquet:
+        outp = Path(args.write_hourly_parquet)
+        outp.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            df.to_parquet(outp)
+        except Exception:
+            df.to_csv(str(outp).replace(".parquet", ".csv"), index=False)
+
+    print(json.dumps({
+        "date": args.date,
+        "site": args.site,
+        "policy": args.policy,
+        "clip_kWh_day": clip_kwh,
+        "ac_kWh_day": ac_kwh,
+        "cols": list(df.columns)[:12]
+    }))
+
+if __name__ == "__main__":
+    main()

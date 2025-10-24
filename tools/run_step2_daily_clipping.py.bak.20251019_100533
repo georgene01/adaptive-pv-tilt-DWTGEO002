@@ -1,0 +1,244 @@
+import argparse, json, numpy as np, pandas as pd, pathlib, types, re
+from types import SimpleNamespace
+from sim_support import run_daily
+
+BASE_TRACKER = dict(axis_tilt_deg=0.0, axis_azimuth_deg=0.0, gcr=0.35, backtrack=True, max_rotation_deg=60.0)
+BASE_MODULE  = dict(pdc0=1.0)
+BASE_MISC    = dict(albedo=0.2, elevation_m=0.0)
+
+SITE_PRESETS = {
+    "NC": dict(lat=-28.45, lon=21.25, tz="Africa/Johannesburg", tracker=BASE_TRACKER, module=BASE_MODULE, **BASE_MISC),
+    "WC": dict(lat=-33.92, lon=18.42, tz="Africa/Johannesburg", tracker=BASE_TRACKER, module=BASE_MODULE, **BASE_MISC),
+}
+
+def get_sim(site: str):
+    s = (site or "").upper()
+    if s not in SITE_PRESETS:
+        raise RuntimeError(f"Unknown site {site}. Known: {list(SITE_PRESETS)}")
+    return types.SimpleNamespace(**SITE_PRESETS[s])
+
+def ensure_sim_defaults(sim):
+    if not hasattr(sim, "tracker") or not isinstance(sim.tracker, dict):
+        sim.tracker = dict(BASE_TRACKER)
+    else:
+        for k, v in BASE_TRACKER.items():
+            sim.tracker.setdefault(k, v)
+    if not hasattr(sim, "module") or not isinstance(sim.module, dict):
+        sim.module = dict(BASE_MODULE)
+    if not hasattr(sim, "albedo"): sim.albedo = BASE_MISC["albedo"]
+    if not hasattr(sim, "elevation_m"): sim.elevation_m = BASE_MISC["elevation_m"]
+    return sim
+
+def _col(df, names):
+    lower = {c.lower(): c for c in df.columns}
+    for name in names:
+        if name in df.columns: return name
+        if name.lower() in lower: return lower[name.lower()]
+    return None
+
+def _maybe_to_kw(series, name):
+    if re.search(r"(_mw|mw)$", name, re.IGNORECASE):
+        return 1000.0 * series
+    return series
+
+def _maybe_series(x):
+    try: return pd.Series(x)
+    except Exception: return None
+
+def _find_timeseries_container(out):
+    if isinstance(out, pd.DataFrame): return out.copy()
+    if isinstance(out, dict):
+        for k in ["hourly","df_hourly","df","timeseries","ts","data"]:
+            v = out.get(k)
+            if isinstance(v, pd.DataFrame): return v.copy()
+        for v in out.values():
+            if isinstance(v, pd.DataFrame): return v.copy()
+            if isinstance(v, dict):
+                for vv in v.values():
+                    if isinstance(vv, pd.DataFrame): return vv.copy()
+        lens={}
+        for k,v in out.items():
+            if hasattr(v,"__len__"):
+                try: lens[k]=len(v)
+                except: pass
+        if lens:
+            from collections import Counter
+            L = Counter(lens.values()).most_common(1)[0][0]
+            cols={}
+            for k,v in out.items():
+                if hasattr(v,"__len__"):
+                    try:
+                        if len(v)==L:
+                            s=_maybe_series(v)
+                            if s is not None: cols[k]=s
+                    except: pass
+            if cols: return pd.DataFrame(cols)
+    for k in ["hourly","df_hourly","df","timeseries","ts","data"]:
+        try:
+            v = getattr(out, k)
+            if isinstance(v, pd.DataFrame): return v.copy()
+        except: pass
+    return None
+
+def _graft_power_from_out(out, df):
+    add={}
+    if isinstance(out, dict):
+        l = { (k.lower() if isinstance(k,str) else k): k for k in out.keys() }
+        for want in ["pac","pac_kw","ac_kw","p_ac","p_ac_kw","p_ac_raw_kw","ac_unclipped_kw","ac_raw_kw"]:
+            if want in l:
+                k = l[want]; s=_maybe_series(out[k])
+                if s is not None: add["P_ac_raw_kw"] = _maybe_to_kw(s.astype(float), str(k)); break
+        for want in ["pdc_kw","p_dc_kw","pdc","pdc_mw"]:
+            if want in l:
+                k = l[want]; s=_maybe_series(out[k])
+                if s is not None: add["P_dc_kw"] = _maybe_to_kw(s.astype(float), str(k)); break
+        for want in ["time","timestamp","datetime","local_time"]:
+            if want in l:
+                k = l[want]; s=_maybe_series(out[k])
+                if s is not None: add["_time"] = pd.to_datetime(s, errors="coerce"); break
+    if add:
+        df2 = df.copy()
+        if "_time" in add and not isinstance(df2.index, pd.DatetimeIndex):
+            df2.index = add["_time"]
+        for k,v in add.items():
+            if k=="_time": continue
+            df2[k]=v.values if len(v)==len(df2) else v
+        return df2
+    return df
+
+def add_clipping_columns(df, p_ac_rated_kw, inverter_eff=0.96, dt_minutes=60,
+                         assume_pac_col=None, assume_pdc_col=None,
+                         plant_ac_kw=None, dcac_ratio=1.0, out=None,
+                         input_is_unit_kwdc=False):
+    if out is not None:
+        df = _graft_power_from_out(out, df)
+
+    if not isinstance(df.index, pd.DatetimeIndex):
+        tcol = _col(df, ["time","timestamp","datetime","ts","date_time","local_time","_time"])
+        if tcol is None: raise RuntimeError("No DatetimeIndex or time column found.")
+        df = df.set_index(pd.to_datetime(df[tcol], errors="coerce"))
+
+    if assume_pac_col and assume_pac_col in df.columns:
+        df["P_ac_raw_kw_unit"] = _maybe_to_kw(df[assume_pac_col].astype(float), assume_pac_col)
+    else:
+        pac_raw_col = _col(df, ["P_ac_raw_kw","pac_raw_kw","ac_raw_kw","pac","pac_kw","ac_kw","p_ac_kw","P_ac_unclipped_kw"])
+        if pac_raw_col is not None:
+            df["P_ac_raw_kw_unit"] = _maybe_to_kw(df[pac_raw_col].astype(float), pac_raw_col)
+
+    if "P_ac_raw_kw_unit" not in df.columns:
+        if assume_pdc_col and assume_pdc_col in df.columns:
+            s = _maybe_to_kw(df[assume_pdc_col].astype(float), assume_pdc_col)
+            df["P_ac_raw_kw_unit"] = inverter_eff * s
+        else:
+            pdc_col = _col(df, ["P_dc_kw","p_dc_kw","Pdc_kw","pdc_kw","Pdc","Pdc_MW","dc_mw"])
+            if pdc_col is None:
+                raise KeyError("No AC/DC source found. Use --assume_pac_col or --assume_pdc_col.")
+            s = _maybe_to_kw(df[pdc_col].astype(float), pdc_col)
+            df["P_ac_raw_kw_unit"] = inverter_eff * s
+
+    plant_ac_kw = float(plant_ac_kw) if plant_ac_kw is not None else float(p_ac_rated_kw)
+    plant_dc_kw = plant_ac_kw * float(dcac_ratio)
+
+    # >>>> Guarded scaling to avoid double-scaling <<<<
+    if input_is_unit_kwdc:
+        df["P_ac_raw_kw"] = df["P_ac_raw_kw_unit"] * plant_dc_kw
+    else:
+        df["P_ac_raw_kw"] = df["P_ac_raw_kw_unit"]
+
+    df["P_ac_clip_kw"] = np.minimum(df["P_ac_raw_kw"], plant_ac_kw)
+    df["P_clip_kw"]    = np.maximum(0.0, df["P_ac_raw_kw"] - df["P_ac_clip_kw"])
+
+    step_h = dt_minutes/60.0
+    df["E_clip_kwh"]   = df["P_clip_kw"]    * step_h
+    df["E_ac_clip_kwh"]= df["P_ac_clip_kw"] * step_h
+
+    daily = df.resample("D").agg({"E_clip_kwh":"sum","E_ac_clip_kwh":"sum"}).rename(
+        columns={"E_clip_kwh":"clip_kWh_day","E_ac_clip_kwh":"ac_kWh_day"})
+    return df, daily
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--site", required=True)
+    ap.add_argument("--weather", required=True)
+    ap.add_argument("--date", required=False)
+    ap.add_argument("--min_deg", type=float, required=True)
+    ap.add_argument("--max_deg", type=float, required=True)
+    ap.add_argument("--step_deg", type=float, required=True)
+    ap.add_argument("--offset_deg", type=float, default=0.0)
+    ap.add_argument("--p_ac_rated_kw", type=float, required=True)
+    ap.add_argument("--plant_ac_kw", type=float, default=None)
+    ap.add_argument("--dcac_ratio", type=float, default=1.30)
+    ap.add_argument("--inverter_eff", type=float, default=0.96)
+    ap.add_argument("--dt_minutes", type=int, default=60)
+    ap.add_argument("--policy", type=str, default="baseline")
+    ap.add_argument("--assume_pac_col", type=str, default=None)
+    ap.add_argument("--assume_pdc_col", type=str, default=None)
+    ap.add_argument("--input_is_unit_kwdc", action="store_true",
+                    help="Treat pre-cap power as per-kWdc (unit). If omitted, assume it is already plant-scale kW.")
+    ap.add_argument("--write_daily_csv", type=str, default=None)
+    ap.add_argument("--write_hourly_parquet", type=str, default=None)
+    args = ap.parse_args()
+
+    p = pathlib.Path(args.weather)
+    if not p.exists(): raise RuntimeError(f"Weather CSV not found: {p}")
+
+    date_str = args.date
+    if not date_str:
+        m = re.search(r"(20\d{2}-\d{2}-\d{2})", p.name)
+        if not m: raise RuntimeError("--date not provided and not inferable from filename.")
+        date_str = m.group(1)
+
+    try:
+        sim = get_sim(args.site)
+    except Exception:
+        sim = SimpleNamespace(lat=-26.2, lon=28.04, tz="Africa/Johannesburg")
+    sim = ensure_sim_defaults(sim)
+    if not hasattr(sim, "inverter") or not isinstance(getattr(sim, "inverter"), dict):
+        sim.inverter = {}
+    sim.inverter.setdefault("pac_nameplate_w", float(args.p_ac_rated_kw) * 1000.0)
+    sim.inverter.setdefault("eta_nom", float(args.inverter_eff))
+
+    out = run_daily(sim, str(p), date_str, offset_deg=args.offset_deg)
+    df_hourly = _find_timeseries_container(out)
+    if df_hourly is None: raise RuntimeError("Could not locate an hourly dataframe in run_daily() output.")
+
+    df_hourly, daily = add_clipping_columns(
+        df_hourly,
+        args.p_ac_rated_kw,
+        args.inverter_eff,
+        args.dt_minutes,
+        assume_pac_col=args.assume_pac_col,
+        assume_pdc_col=args.assume_pdc_col,
+        plant_ac_kw=(args.plant_ac_kw if args.plant_ac_kw is not None else args.p_ac_rated_kw),
+        dcac_ratio=args.dcac_ratio,
+        out=out,
+        input_is_unit_kwdc=args.input_is_unit_kwdc
+    )
+
+    annual_clip_MWh = daily["clip_kWh_day"].sum()/1000.0
+    annual_ac_MWh   = daily["ac_kWh_day"].sum()/1000.0
+
+    if args.write_daily_csv:
+        out_csv = pathlib.Path(args.write_daily_csv)
+        out_csv.parent.mkdir(parents=True, exist_ok=True)
+        is_new = not out_csv.exists()
+        pd.DataFrame([{
+            "date": date_str, "site": args.site, "policy": args.policy,
+            "clip_kWh_day": float(daily["clip_kWh_day"].sum()),
+            "ac_kWh_day": float(daily["ac_kWh_day"].sum()),
+        }]).to_csv(out_csv, mode="a", header=is_new, index=False)
+
+    if args.write_hourly_parquet:
+        pq_path = pathlib.Path(args.write_hourly_parquet)
+        pq_path.parent.mkdir(parents=True, exist_ok=True)
+        try: df_hourly.to_parquet(pq_path)
+        except Exception: df_hourly.to_csv(str(pq_path).replace(".parquet",".csv"))
+
+    print(json.dumps({
+        "date": date_str, "site": args.site, "policy": args.policy,
+        "annual_clip_MWh": annual_clip_MWh, "annual_ac_MWh": annual_ac_MWh,
+        "daily_rows": int(len(daily)),
+        "columns": list(map(str, list(df_hourly.columns)[:16]))
+    }))
+if __name__ == "__main__":
+    main()
